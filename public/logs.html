@@ -11,16 +11,8 @@
   <div class="container mt-5">
     <h1 class="text-center">Visit Logs</h1>
 
-    <!-- Filter Form -->
-    <form id="filter-form" class="row g-3 mt-4">
-      <div class="col-md-3">
-        <label for="start-date" class="form-label">Start Date:</label>
-        <input type="date" id="start-date" class="form-control" name="start-date">
-      </div>
-      <div class="col-md-3">
-        <label for="end-date" class="form-label">End Date:</label>
-        <input type="date" id="end-date" class="form-control" name="end-date">
-      </div>
+    <!-- Records Per Page Selector -->
+    <div class="row g-3 mt-4">
       <div class="col-md-3">
         <label for="records-per-page" class="form-label">Records Per Page:</label>
         <select id="records-per-page" class="form-select">
@@ -30,10 +22,7 @@
           <option value="100">100</option>
         </select>
       </div>
-      <div class="col-md-3 d-flex align-items-end">
-        <button type="button" id="apply-filters" class="btn btn-primary w-100">Apply Filters</button>
-      </div>
-    </form>
+    </div>
 
     <!-- Logs Table -->
     <div class="table-responsive mt-4">
@@ -63,15 +52,11 @@
     let currentPage = 1;
 
     async function fetchLogs() {
-      const startDate = document.getElementById('start-date').value;
-      const endDate = document.getElementById('end-date').value;
       const limit = document.getElementById('records-per-page').value;
 
       const queryParams = new URLSearchParams({
         page: currentPage,
         limit,
-        ...(startDate ? { start_date: startDate } : {}),
-        ...(endDate ? { end_date: endDate } : {}),
       });
 
       try {
@@ -114,8 +99,8 @@
       fetchLogs();
     });
 
-    document.getElementById('apply-filters').addEventListener('click', () => {
-      currentPage = 1; // Reset to the first page when filters change
+    document.getElementById('records-per-page').addEventListener('change', () => {
+      currentPage = 1; // Reset to the first page when page size changes
       fetchLogs();
     });
 

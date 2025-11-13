@@ -2,10 +2,41 @@ const express = require('express');
 const path = require('path');
 const { Sequelize, DataTypes } = require('sequelize');
 const { SecretManagerServiceClient } = require('@google-cloud/secret-manager');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+const axios = require('axios');
 require('dotenv').config(); // For local development
 
 const app = express();
 const port = process.env.PORT || 8080;
+
+// Security: Add security headers to protect against common vulnerabilities
+// This sets headers like X-Content-Type-Options, X-Frame-Options, etc.
+// Configure CSP to allow Bootstrap CDN for educational purposes
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        styleSrc: ["'self'", "https://cdn.jsdelivr.net"],
+        scriptSrc: ["'self'"],
+        fontSrc: ["'self'", "https://cdn.jsdelivr.net"],
+        imgSrc: ["'self'", "data:", "https:"],
+        connectSrc: ["'self'", "https://cdn.jsdelivr.net", "https://ipapi.co"],
+      },
+    },
+  })
+);
+
+// Rate limiting: Prevent abuse by limiting requests per IP address
+// Students learn about resource protection and API quota management
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 requests per windowMs
+  message: 'Too many requests from this IP, please try again later.',
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+});
 
 // Middleware for static files
 app.use(express.static(path.join(__dirname, 'public')));
@@ -36,7 +67,10 @@ async function getSecret(secretName) {
       dialect: 'postgres',
       dialectOptions: process.env.NODE_ENV === 'production'
         ? {
-            
+            ssl: {
+              require: true,
+              rejectUnauthorized: false,
+            },
           }
         : {},
     });
@@ -65,20 +99,76 @@ async function getSecret(secretName) {
       res.send('App is running and connected to the database.');
     });
 
+    // Health check endpoint for Google Cloud Platform monitoring
+    // GCP uses this to verify the app is running correctly and database is connected
+    app.get('/_health', async (_req, res) => {
+      try {
+        await sequelize.authenticate();
+        res.status(200).json({
+          status: 'ok',
+          database: 'connected',
+          timestamp: new Date().toISOString()
+        });
+      } catch (error) {
+        res.status(503).json({
+          status: 'error',
+          database: 'disconnected',
+          timestamp: new Date().toISOString()
+        });
+      }
+    });
+
+    // Handle favicon requests to prevent 404 errors in browser console
+    app.get('/favicon.ico', (_req, res) => {
+      res.status(204).end(); // 204 No Content
+    });
+
     // Route: Log client information
-    app.get('/api/client-info', async (req, res) => {
-      const ip = req.headers['x-forwarded-for'] || req.connection.remoteAddress || 'Unknown';
+    // Apply rate limiting to prevent abuse
+    app.get('/api/client-info', apiLimiter, async (req, res) => {
+      let ip = req.headers['x-forwarded-for'] || req.connection.remoteAddress || 'Unknown';
       const userAgent = req.headers['user-agent'] || 'Unknown';
 
+      // Normalize localhost IPs
+      if (ip === '::1' || ip === '127.0.0.1') {
+        ip = 'localhost';
+      }
+
+      // Fetch geolocation data from ipapi.co (free tier: 1K/day, 30K/month)
+      let locationData = {
+        city: 'N/A',
+        region: 'N/A',
+        country: 'N/A',
+        latitude: 'N/A',
+        longitude: 'N/A',
+      };
+
+      if (ip !== 'localhost' && ip !== 'Unknown') {
+        try {
+          const response = await axios.get(`https://ipapi.co/${ip}/json/`, { timeout: 3000 });
+          locationData = {
+            city: response.data.city || 'N/A',
+            region: response.data.region || 'N/A',
+            country: response.data.country_name || 'N/A',
+            latitude: response.data.latitude || 'N/A',
+            longitude: response.data.longitude || 'N/A',
+          };
+        } catch (error) {
+          console.log('Geolocation API request failed:', error.message);
+          // Keep default 'N/A' values if API fails
+        }
+      }
+
+      // Store visit in database
       try {
         await Visit.create({
           ip,
           user_agent: userAgent,
-          city: 'N/A',
-          region: 'N/A',
-          country: 'N/A',
-          latitude: 'N/A',
-          longitude: 'N/A',
+          city: locationData.city,
+          region: locationData.region,
+          country: locationData.country,
+          latitude: locationData.latitude.toString(),
+          longitude: locationData.longitude.toString(),
         });
       } catch (error) {
         console.error('Database error:', error.message);
@@ -87,26 +177,40 @@ async function getSecret(secretName) {
       res.json({
         ip,
         userAgent,
-        locationData: 'N/A (IP lookup not implemented here for simplicity)',
+        locationData,
       });
     });
 
     // Route: Fetch paginated logs
-    app.get('/api/logs', async (req, res) => {
+    // Apply rate limiting and input validation
+    app.get('/api/logs', apiLimiter, async (req, res) => {
       const { page = 1, limit = 10 } = req.query;
-      const offset = (page - 1) * limit;
+
+      // Input validation: Ensure page and limit are positive integers
+      const pageNum = parseInt(page);
+      const limitNum = parseInt(limit);
+
+      if (isNaN(pageNum) || pageNum < 1) {
+        return res.status(400).json({ error: 'Invalid page number. Must be a positive integer.' });
+      }
+
+      if (isNaN(limitNum) || limitNum < 1 || limitNum > 100) {
+        return res.status(400).json({ error: 'Invalid limit. Must be between 1 and 100.' });
+      }
+
+      const offset = (pageNum - 1) * limitNum;
 
       try {
         const { count, rows } = await Visit.findAndCountAll({
-          offset: parseInt(offset),
-          limit: parseInt(limit),
+          offset: offset,
+          limit: limitNum,
           order: [['visited_at', 'DESC']],
         });
 
         res.json({
           totalRecords: count,
-          currentPage: parseInt(page),
-          totalPages: Math.ceil(count / limit),
+          currentPage: pageNum,
+          totalPages: Math.ceil(count / limitNum),
           logs: rows,
         });
       } catch (error) {
@@ -122,8 +226,26 @@ async function getSecret(secretName) {
     });
 
     // Start the server
-    app.listen(port, () => {
+    const server = app.listen(port, () => {
       console.log(`App running at http://localhost:${port}`);
+    });
+
+    // Graceful shutdown handler for cloud environments
+    // When GCP stops the instance, it sends SIGTERM signal
+    // This ensures database connections are closed properly before shutdown
+    process.on('SIGTERM', async () => {
+      console.log('SIGTERM signal received: closing HTTP server');
+      server.close(async () => {
+        console.log('HTTP server closed');
+        try {
+          await sequelize.close();
+          console.log('Database connection closed');
+          process.exit(0);
+        } catch (error) {
+          console.error('Error closing database connection:', error.message);
+          process.exit(1);
+        }
+      });
     });
   } catch (error) {
     console.error('Failed to initialize application:', error.message);

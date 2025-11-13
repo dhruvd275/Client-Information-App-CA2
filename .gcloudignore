@@ -17,3 +17,11 @@
 node_modules/
 
 .env
+
+# PostgreSQL local database volume
+db_volume/
+
+# Docker files (for local development only)
+Dockerfile
+.dockerignore
+docker-compose.yml

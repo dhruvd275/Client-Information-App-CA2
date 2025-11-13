@@ -749,3 +749,12 @@ FodyWeavers.xsd
 # Additional files built by Visual Studio
 
 # End of https://www.toptal.com/developers/gitignore/api/macos,osx,windows,visualstudio,visualstudiocode,virtualenv,venv,dotenv,compressedarchive,archives,jetbrains+all
+
+# PostgreSQL local database volume
+db_volume/
+
+# Docker
+.dockerignore
+
+# Keep .env.template in git, but ignore .env
+!.env.template

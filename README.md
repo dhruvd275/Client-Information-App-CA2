@@ -1,31 +1,41 @@
 
 # **Visit Logs Application**
 
-This is a Node.js application that logs client information, including IP, browser details, and visit timestamps, to a PostgreSQL database. It allows filtering and viewing logs in a paginated table format.
+This is a Node.js application that logs client information, including IP address, geolocation data, browser details, and visit timestamps, to a PostgreSQL database. It allows viewing logs in a paginated table format.
 
-The giud display how to deply application lcaly and further down describe how to deploy it to Google Cloud.
+This guide displays how to deploy the application locally and further down describes how to deploy it to Google Cloud.
 
 This guide explains how to deploy the application to **Google Cloud App Engine** with **Cloud SQL for PostgreSQL** and **Secret Manager** for secure configuration.
 
-> **NOTE:** This guide is for educational purposes only and is not intended for a production environment. Security aspects of the application are not fully covered.
-{style="color: red;"}
+> **⚠️ IMPORTANT SECURITY WARNING:**
+> This application is designed **for educational purposes only** and is **NOT production-ready**. Specifically:
+> - **SSL certificate validation is DISABLED** in the database configuration (`rejectUnauthorized: false`)
+> - This makes the application **vulnerable to man-in-the-middle attacks**
+> - For production use, you MUST enable SSL certificate validation and properly configure Cloud SQL SSL certificates
+> - Do NOT use this configuration for applications handling sensitive or real user data
 
 ---
 
 ## **Features**
-- Logs client information to a PostgreSQL database.
-- Displays logs in a paginated table with filters (date range, records per page).
-- Uses Google Cloud Secret Manager for secure configuration.
-- Designed for deployment on Google Cloud App Engine with Cloud SQL.
+- Logs client information (IP, user-agent, geolocation data, timestamp) to a PostgreSQL database
+- Real-time geolocation lookup using ipapi.co API (city, region, country, coordinates)
+- Displays logs in a paginated table with configurable records per page (10, 20, 50, 100)
+- Security headers via Helmet.js (XSS protection, clickjacking prevention, etc.)
+- Rate limiting on API endpoints (100 requests per IP per 15 minutes)
+- Input validation for query parameters
+- Health check endpoint for GCP monitoring
+- Graceful shutdown handling for cloud deployments
+- Uses Google Cloud Secret Manager for secure configuration
+- Designed for deployment on Google Cloud App Engine with Cloud SQL
 
 ---
 
 ## **Local Setup**
 
 ### **1. Prerequisites**
-- Node.js and npm installed on your system.
-- Docker installed and running (for local PostgreSQL).
-- Google Cloud CLI installed and authenticated.
+- **Docker** and **Docker Compose** installed and running (for local development)
+- **Node.js 22 or higher** (optional - only needed if running outside Docker)
+- **Google Cloud CLI** installed and authenticated (for cloud deployment)
 
 ---
 
@@ -38,66 +48,104 @@ cd <repository-folder>
 ---
 
 ### **3. Set Up Environment Variables**
-Create a `.env` file in the project root with the following content:
+
+Copy the template file to create your local environment configuration:
+```bash
+cp .env.template .env
+```
+
+This creates a `.env` file with the following default values:
 ```bash
 POSTGRES_USER=secure_user
 POSTGRES_PASSWORD=secure_password
 POSTGRES_DB=client_info
-DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/${POSTGRES_DB}
 ```
+
+**Note:**
+- You can change these values to use different credentials if desired
+- When running with Docker Compose, the `DATABASE_URL` is automatically configured
+- The `.env` file is already excluded from git (in `.gitignore`) to protect your credentials
+- If running the app outside Docker, uncomment the `DATABASE_URL` line in `.env`
 
 ---
 
-### **4. Start PostgreSQL Locally**
-Create a `docker-compose.yml` file in the root directory with the following content:
-```yaml
-version: "3.8"
-services:
-  db:
-    image: postgres:latest
-    container_name: postgres_db
-    environment:
-      POSTGRES_USER: secure_user
-      POSTGRES_PASSWORD: secure_password
-      POSTGRES_DB: client_info
-    ports:
-      - "5432:5432"
-    volumes:
-      - db_data:/var/lib/postgresql/data
+### **4. Start the Application with Docker Compose**
 
-volumes:
-  db_data:
-```
+The application is fully containerized using Docker Compose, which runs both the PostgreSQL database and the Node.js application in containers.
 
-Run the following command to start PostgreSQL:
+**Configuration Overview:**
+The `docker-compose.yml` file includes:
+- **Database service**: PostgreSQL with data stored in local `db_volume/` directory (using PostgreSQL 18+ recommended mount point)
+- **App service**: Node.js application that automatically runs migrations on startup
+- **Health checks**: Ensures database is ready before starting the app
+- **Networking**: Both services communicate via a private Docker network
+
+**To start the application:**
 ```bash
 docker compose up -d
 ```
 
----
+This command will:
+1. Build the Node.js application Docker image
+2. Start the PostgreSQL database container
+3. Wait for the database to be healthy
+4. Run database migrations automatically
+5. Start the Node.js application
 
-### **5. Install Dependencies**
+**To view logs:**
 ```bash
-npm install
+# View logs from both services
+docker compose logs -f
+
+# View logs from just the app
+docker compose logs -f app
+
+# View logs from just the database
+docker compose logs -f db
 ```
 
----
-
-### **6. Run Migrations**
+**To stop the application:**
 ```bash
-npm run migrate
+docker compose down
 ```
 
----
-
-### **7. Start the Application Locally**
+**To stop and remove database data:**
 ```bash
-npm start
+docker compose down
+rm -rf db_volume/
 ```
+
+**Note:** Database data is stored in `db_volume/` directory. PostgreSQL 18+ automatically creates subdirectories inside for version-specific data storage.
 
 Visit the application at `http://localhost:8080`.
 
-List of visitors is displayed at `http://localhost:8080/logs`.
+- **Homepage**: `http://localhost:8080/` - Shows connection status
+- **Client Info API**: `http://localhost:8080/api/client-info` - Returns your IP, user-agent, and geolocation
+- **Visit Logs**: `http://localhost:8080/logs` - Displays paginated table of all visits
+- **Health Check**: `http://localhost:8080/_health` - GCP health monitoring endpoint
+
+### **Alternative: Running Without Docker**
+
+If you prefer to run the application directly on your machine (without Docker):
+
+1. **Ensure Node.js 22+ is installed**
+2. **Set up environment variables**: Uncomment the `DATABASE_URL` line in your `.env` file
+3. **Start PostgreSQL** (using Docker or installed locally):
+   ```bash
+   docker compose up -d db  # Start only the database
+   ```
+4. **Install dependencies**:
+   ```bash
+   npm install
+   ```
+5. **Run migrations**:
+   ```bash
+   npm run migrate
+   ```
+6. **Start the app**:
+   ```bash
+   npm start
+   ```
 
 ---
 
@@ -227,7 +275,7 @@ gcloud projects list
 
 Review an `app.yaml` file in the project root:
 ```yaml
-runtime: nodejs20
+runtime: nodejs22
 instance_class: F1
 env: standard
 automatic_scaling:
@@ -249,12 +297,12 @@ Review and validate a `cloudbuild.yaml` file in the project root with the follow
 ```yaml
 steps:
   # Step 1: Install dependencies
-  - name: 'node:20'
+  - name: 'node:22'
     entrypoint: 'npm'
     args: ['install']
 
   # Step 2: Run Sequelize migrations with DATABASE_URL fetched from Secret Manager
-  - name: 'node:20'
+  - name: 'node:22'
     entrypoint: 'bash'
     args:
       - '-c'
@@ -354,14 +402,93 @@ Replace `<PROJECT_ID>` with your project ID.
 
 ---
 
+## **Additional Notes**
+
+### **Geolocation API Limits**
+This application uses the **ipapi.co** free service for geolocation data. Be aware of the following limits:
+- **1,000 requests per day** without an API key
+- **30,000 requests per month** total
+- If these limits are exceeded, location data will display as "N/A"
+- For localhost/development testing, location is automatically set to "N/A"
+- For production use or higher limits, consider signing up for a free API key at [ipapi.co](https://ipapi.co/)
+
+### **Security Features**
+This application includes several security best practices for educational purposes:
+- **Helmet.js**: Adds security headers to protect against common vulnerabilities (XSS, clickjacking, MIME sniffing, etc.)
+- **Rate Limiting**: API endpoints are limited to 100 requests per IP address every 15 minutes to prevent abuse
+- **Input Validation**: Query parameters (page, limit) are validated to prevent injection attacks
+- **Content Security Policy**: Configured to allow Bootstrap CDN while maintaining security
+- **Graceful Shutdown**: The app properly handles SIGTERM signals for clean shutdowns in cloud environments
+
+⚠️ **However**: SSL certificate validation is disabled (`rejectUnauthorized: false`) for educational simplicity. See security warning at top of README.
+
+### **Health Check Endpoint**
+The application includes a health check endpoint at `/_health` that returns:
+```json
+{
+  "status": "ok",
+  "database": "connected",
+  "timestamp": "2025-01-15T10:30:00.000Z"
+}
+```
+This endpoint:
+- Checks database connectivity
+- Returns 200 OK if database is connected
+- Returns 503 Service Unavailable if database is disconnected
+- Used by Google Cloud Platform for monitoring and health checks
+
+### **Database Models**
+This application uses **inline Sequelize models** defined directly in `app.js` (lines 44-54). The `models/index.js` file exists but is not used by the application. This is an intentional simplification for educational purposes. If you plan to expand this application with multiple models, consider using the standard Sequelize model structure via `models/index.js`.
+
+---
+
 ## **Troubleshooting**
 
-### Database Connection Issues
-- Verify the `DATABASE_URL` secret is correctly configured.
-- Ensure the Cloud SQL instance has the correct user, password, and database.
+### **Issue: Location shows "N/A" for all visitors**
+**Possible causes:**
+1. The ipapi.co free tier limit (1,000 requests/day or 30,000/month) has been exceeded
+2. The geolocation API is temporarily unavailable
+3. The IP address is localhost or cannot be geolocated (e.g., private networks, VPNs)
 
-### Permission Errors
-- Ensure the App Engine service account has the `roles/secretmanager.secretAccessor` role.
+**Solution:** Wait for the daily/monthly limit to reset, or sign up for a free API key at ipapi.co.
 
-### Deployment Failures
-- Check the Cloud Build logs in the Google Cloud Console for more details.
+### **Issue: "Too many requests" error**
+**Cause:** The rate limiter has detected more than 100 requests from your IP in 15 minutes.
+
+**Solution:** Wait 15 minutes before trying again, or test from a different IP address.
+
+### **Issue: App won't start locally**
+**Cause:** Node.js version is too old (only applies if running outside Docker).
+
+**Solution:** Upgrade to Node.js 22 or higher:
+```bash
+nvm install 22
+nvm use 22
+```
+Or download from [nodejs.org](https://nodejs.org/).
+
+### **Issue: "Cannot find .env file" or environment variables not loading**
+**Cause:** The `.env` file hasn't been created from the template.
+
+**Solution:**
+```bash
+cp .env.template .env
+```
+Then edit `.env` with your desired credentials if needed.
+
+### **Issue: models/index.js references config.json instead of config.js**
+**Note:** This has been fixed in the latest version (line 9 of models/index.js now correctly references config.js). If you encounter this error, update line 9 from `config.json` to `config.js`.
+
+### **Database Connection Issues**
+- Verify the `DATABASE_URL` secret is correctly configured
+- Ensure the Cloud SQL instance has the correct user, password, and database
+- Check Cloud SQL connection name matches the one in DATABASE_URL
+
+### **Permission Errors**
+- Ensure the App Engine service account has the `roles/secretmanager.secretAccessor` role
+- Verify the service account email format: `<PROJECT_ID>@appspot.gserviceaccount.com`
+
+### **Deployment Failures**
+- Check the Cloud Build logs in the Google Cloud Console for more details
+- Verify migrations ran successfully during the Cloud Build step
+- Check that all required APIs are enabled (App Engine, Cloud Build, Cloud SQL, Secret Manager)
