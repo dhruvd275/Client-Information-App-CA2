@@ -282,7 +282,8 @@ You should see your full DATABASE_URL string (without `<INSTANCE_CONNECTION_NAME
 ---
 
 ## **6. Grant Secret Manager Permissions**
-Allow App Engine to access the `
+
+Allow App Engine to access the `DATABASE_URL` secret:
 
 ```bash
 gcloud secrets add-iam-policy-binding DATABASE_URL \
