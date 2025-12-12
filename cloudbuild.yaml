@@ -4,15 +4,30 @@ steps:
     entrypoint: 'npm'
     args: ['ci']
 
-  # Step 2: Run Sequelize migrations (DATABASE_URL comes from Secret Manager)
+  # Step 2: Run migrations (start Cloud SQL Proxy first)
   - name: 'node:22'
     entrypoint: 'bash'
     secretEnv: ['DATABASE_URL']
     args:
       - '-c'
       - |
+        set -e
+
+        echo "Downloading Cloud SQL Auth Proxy..."
+        curl -fL -o cloud-sql-proxy https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.14.2/cloud-sql-proxy.linux.amd64
+        chmod +x cloud-sql-proxy
+
+        echo "Starting Cloud SQL Auth Proxy..."
+        ./cloud-sql-proxy "clinet-info-db-ca2:europe-west2:my-postgres-instance-ca2" --address 127.0.0.1 --port 5432 &
+        PROXY_PID=$!
+
+        sleep 5
+
         echo "Running migrations..."
-        npx sequelize-cli db:migrate
+        DATABASE_URL="$DATABASE_URL" npx sequelize-cli db:migrate
+
+        echo "Stopping proxy..."
+        kill $PROXY_PID
 
   # Step 3: Deploy to Google App Engine
   - name: 'gcr.io/cloud-builders/gcloud'
