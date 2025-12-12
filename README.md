@@ -395,11 +395,19 @@ Set up a trigger in Google Cloud to deploy your app on every commit:
 ```bash
 gcloud beta builds triggers create github \
     --name="deploy-visit-logs-app" \
-    --repo-name="<YOUR_REPOSITORY>" \
-    --repo-owner="<YOUR_GITHUB_USERNAME>" \
+    --repo-name="Client-Information-App-CA2" \
+    --repo-owner="<dhruvd275>" \
     --branch-pattern=".*" \
     --build-config="cloudbuild.yaml"
 ```
+gcloud beta builds triggers create github \
+  --name="deploy-visit-logs-app" \
+  --region=europe-west2 \
+  --repo-owner="dhruvd275" \
+  --repo-name="Client-Information-App-CA2" \
+  --branch-pattern=".*" \
+  --build-config="cloudbuild.yaml"
+
 
 Replace `<YOUR_REPOSITORY>` and `<YOUR_GITHUB_USERNAME>` with your repository details.
 
