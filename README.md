@@ -217,8 +217,8 @@ Secure postgress default user:
 
 ```bash
 gcloud sql users set-password postgres \
-    --instance=my-postgres-instance \
-    --password=your_secure_password
+    --instance=my-postgres-instance-ca2 \
+    --password=dhruvd275
 ```
 
 
@@ -231,7 +231,7 @@ gcloud sql users set-password postgres \
    ```bash
    gcloud sql users create secure_user \
        --instance=my-postgres-instance \
-       --password=secure_password
+       --password=dhruvd275
    ```
 
 ---
@@ -246,6 +246,7 @@ First, get the full connection name of your Cloud SQL instance:
 ```bash
 gcloud sql instances describe my-postgres-instance --format="value(connectionName)"
 ```
+clinet-info-db-ca2:europe-west2:my-postgres-instance-ca2
 
 This will output something like: `your-project-id:europe-west2:my-postgres-instance`
 
@@ -254,7 +255,7 @@ This will output something like: `your-project-id:europe-west2:my-postgres-insta
 Now create the `DATABASE_URL` secret, **replacing the placeholders** with your actual values:
 
 ```bash
-echo -n "postgresql://secure_user:secure_password@/client_info?host=/cloudsql/YOUR_PROJECT_ID:REGION:INSTANCE_NAME" | \
+echo -n "postgresql://secure_user:dhruvd275@/client_info?host=/cloudsql/clinet-info-db-ca2:europe-west2:my-postgres-instance-ca2" | \
 gcloud secrets create DATABASE_URL --data-file=-
 ```
 
@@ -287,7 +288,7 @@ Allow App Engine to access the `DATABASE_URL` secret:
 
 ```bash
 gcloud secrets add-iam-policy-binding DATABASE_URL \
-    --member="serviceAccount:<PROJECT_ID>@appspot.gserviceaccount.com" \
+    --member="serviceAccount:clinet-info-db-ca2@appspot.gserviceaccount.com" \
     --role="roles/secretmanager.secretAccessor"
 ```
 
@@ -296,6 +297,12 @@ You can get list of projects by executing:
 ```bash
 gcloud projects list
 ```
+PROJECT_ID            NAME                 PROJECT_NUMBER  ENVIRONMENT
+client-inf0-app-ca1   client-inf0-app-ca1  787239516184
+clinet-info-db-ca2    clinet-info-db-ca2   459713973146
+databasetest-478813   databasetest         963987365442
+loyal-env-473310-b8   My First Project     135955110593
+realestate-app-24580  realestate-app       259535274852
 ---
 
 ## **7. Configure `app.yaml`**
