@@ -2,22 +2,26 @@ steps:
   # Step 1: Install dependencies
   - name: 'node:22'
     entrypoint: 'npm'
-    args: ['install']
+    args: ['ci']
 
-  # Step 2: Run Sequelize migrations with DATABASE_URL fetched from Secret Manager
+  # Step 2: Run Sequelize migrations (DATABASE_URL comes from Secret Manager)
   - name: 'node:22'
     entrypoint: 'bash'
+    secretEnv: ['DATABASE_URL']
     args:
       - '-c'
       - |
-        echo "Fetching DATABASE_URL from Secret Manager..."
-        DATABASE_URL=$(gcloud secrets versions access latest --secret=DATABASE_URL)
         echo "Running migrations..."
-        DATABASE_URL=$DATABASE_URL npx sequelize-cli db:migrate
+        npx sequelize-cli db:migrate
 
   # Step 3: Deploy to Google App Engine
   - name: 'gcr.io/cloud-builders/gcloud'
     args: ['app', 'deploy', '--quiet']
+
+availableSecrets:
+  secretManager:
+    - versionName: projects/459713973146/secrets/DATABASE_URL/versions/latest
+      env: 'DATABASE_URL'
 
 options:
   logging: CLOUD_LOGGING_ONLY
