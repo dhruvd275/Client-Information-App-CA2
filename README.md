@@ -231,7 +231,7 @@ gcloud sql users set-password postgres \
    ```bash
    gcloud sql users create secure_user \
        --instance=my-postgres-instance \
-       --password=dhruvd275
+       --password=Dhruv12345!
    ```
 
 ---
@@ -580,4 +580,14 @@ Then edit `.env` with your desired credentials if needed.
 - Check that all required APIs are enabled (App Engine, Cloud Build, Cloud SQL, Secret Manager)
 - Check App Engine logs: `gcloud app logs read --limit=50`
 
+
+
 test 2
+# to activate the respective project
+gcloud config configurations activate ca2-client-info-db
+
+
+# To check active project
+gcloud config get-value project
+
+ Wed Dec 17 11:01:05 GMT 2025
